@@ -12,6 +12,36 @@ from pydantic_core.core_schema import ValidationInfo
 from app.config import config
 from app.tool.base import BaseTool, ToolResult
 
+from browser_use import Controller, ActionResult, Browser
+from pydantic import BaseModel
+controller = Controller()
+class SearchParams(BaseModel):
+    query: str
+    search_box_selector: str = 'input[name="q"]'
+
+controller = Controller(exclude_actions=[
+    'open_tab', 
+    'search_google', 
+    'close_tab', 
+    'get_html'
+])
+
+@controller.action('Perform Search', param_model=SearchParams)
+async def perform_search(params: SearchParams, browser: Browser):
+    try:
+        page = await browser.get_current_page()  # Await page retrieval [[6]]
+        search_box = await page.query_selector(params.search_box_selector)
+        if not search_box:
+            return ActionResult(output="Error: Search box not found!")
+        
+        await search_box.type(params.query)
+        await search_box.press('Enter')
+        await page.wait_for_navigation()
+        return ActionResult(output=f"Search performed for query: {params.query}")
+    except Exception as e:
+        return ActionResult(output=f"An error occurred: {str(e)}")
+
+controller = Controller(exclude_actions=['open_tab', 'search_google'])
 
 MAX_LENGTH = 2000
 
@@ -314,12 +344,21 @@ class BrowserUseTool(BaseTool):
                 await self.browser.close()
                 self.browser = None
 
-    def __del__(self):
-        """Ensure cleanup when object is destroyed."""
-        if self.browser is not None or self.context is not None:
-            try:
-                asyncio.run(self.cleanup())
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                loop.run_until_complete(self.cleanup())
-                loop.close()
+     async def __aenter__(self):
+        await self._ensure_browser_initialized()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        await self.cleanup()
+
+    async def __aexit__(self, exc_type, exc, tb):
+        await self.cleanup()
+
+        async def main():
+    async with BrowserUseTool() as browser_tool:  # Proper context management [[7]]
+        websearch = WebSearch()
+        results = await websearch.execute("your query")
+        print(results)
+
+if __name__ == "__main__":
+    asyncio.run(main())  # Single event loop entry [[6]]

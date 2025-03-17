@@ -39,6 +39,51 @@ class SearchSettings(BaseModel):
     engine: str = Field(default="Google", description="Search engine the llm to use")
 
 
+class PythonExecuteSettings(BaseModel):
+    allowed_modules: List[str] = Field(
+        default_factory=lambda: [
+            "math", "datetime", "random", "json", "re", "collections", 
+            "itertools", "functools", "statistics", "copy", "uuid"
+        ],
+        description="List of allowed modules in the secure sandbox"
+    )
+    default_timeout: int = Field(
+        default=5, 
+        description="Default execution timeout in seconds"
+    )
+    default_memory_limit: int = Field(
+        default=100, 
+        description="Default memory limit in MB"
+    )
+    max_output_size: int = Field(
+        default=1048576,  # 1MB
+        description="Maximum output size in bytes"
+    )
+
+
+class LLMCacheSettings(BaseModel):
+    enabled: bool = Field(
+        default=True,
+        description="Whether to enable LLM response caching"
+    )
+    directory: str = Field(
+        default=".cache/llm_cache",
+        description="Cache directory path"
+    )
+    max_size: int = Field(
+        default=1073741824,  # 1GB
+        description="Maximum cache size in bytes"
+    )
+    ttl: int = Field(
+        default=2592000,  # 30 days
+        description="Cache TTL in seconds"
+    )
+    deterministic_only: bool = Field(
+        default=True,
+        description="Only cache deterministic requests (temperature=0)"
+    )
+
+
 class BrowserSettings(BaseModel):
     headless: bool = Field(False, description="Whether to run browser in headless mode")
     disable_security: bool = Field(
@@ -68,6 +113,12 @@ class AppConfig(BaseModel):
     )
     search_config: Optional[SearchSettings] = Field(
         None, description="Search configuration"
+    )
+    python_execute_config: Optional[PythonExecuteSettings] = Field(
+        None, description="Python execution security configuration"
+    )
+    llm_cache_config: Optional[LLMCacheSettings] = Field(
+        None, description="LLM response caching configuration"
     )
 
     class Config:
@@ -166,6 +217,21 @@ class Config:
         if search_config:
             search_settings = SearchSettings(**search_config)
 
+        # handle python execute config
+        python_execute_config = raw_config.get("python_execute", {})
+        python_execute_settings = None
+        if python_execute_config:
+            python_execute_settings = PythonExecuteSettings(**python_execute_config)
+            
+        # handle llm cache config
+        llm_cache_config = raw_config.get("llm_cache", {})
+        llm_cache_settings = None
+        if llm_cache_config:
+            llm_cache_settings = LLMCacheSettings(**llm_cache_config)
+        else:
+            # Create default cache settings if not specified
+            llm_cache_settings = LLMCacheSettings()
+
         config_dict = {
             "llm": {
                 "default": default_settings,
@@ -176,6 +242,8 @@ class Config:
             },
             "browser_config": browser_settings,
             "search_config": search_settings,
+            "python_execute_config": python_execute_settings,
+            "llm_cache_config": llm_cache_settings,
         }
 
         self._config = AppConfig(**config_dict)
@@ -191,6 +259,14 @@ class Config:
     @property
     def search_config(self) -> Optional[SearchSettings]:
         return self._config.search_config
+        
+    @property
+    def python_execute_config(self) -> Optional[PythonExecuteSettings]:
+        return self._config.python_execute_config
+        
+    @property
+    def llm_cache_config(self) -> Optional[LLMCacheSettings]:
+        return self._config.llm_cache_config
 
 
 config = Config()

@@ -72,7 +72,7 @@ class WebSearch(BaseTool):
             List[str]: Ordered list of search engine names.
         """
         preferred = "google"
-        if config.search_config and config.search_config.engine:
+        if hasattr(config, "search_config") and hasattr(config.search_config, "engine"):
             preferred = config.search_config.engine.lower()
 
         engine_order = []
@@ -94,6 +94,22 @@ class WebSearch(BaseTool):
         num_results: int,
     ) -> List[str]:
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None, lambda: list(engine.perform_search(query, num_results=num_results))
-        )
+        try:
+            # Run synchronous search method in a thread
+            results = await loop.run_in_executor(
+                None, lambda: engine.perform_search(query, num_results=num_results)
+            )
+            
+            # Ensure we always return a list of strings (URLs)
+            if isinstance(results, list):
+                # If results is already a list, make sure all items are strings
+                return [str(item) for item in results]
+            elif results:
+                # If results is some other non-empty iterable, convert to list of strings
+                return [str(item) for item in list(results)]
+            else:
+                # Empty result
+                return []
+        except Exception as e:
+            print(f"Error in search engine: {e}")
+            return []

@@ -1,6 +1,10 @@
 from typing import Dict, List, Optional, Union
 
+import hashlib
+import json
 import tiktoken
+from functools import lru_cache
+from app.cache.llm_cache import llm_cache
 from openai import (
     APIError,
     AsyncAzureOpenAI,
@@ -264,7 +268,17 @@ class LLM:
             if not stream:
                 # Non-streaming request
                 params["stream"] = False
-
+                
+                # Check cache first (only for non-streaming requests)
+                actual_temp = temperature if temperature is not None else self.temperature
+                cached_response = llm_cache.get(messages, self.model, actual_temp)
+                if cached_response:
+                    logger.info(f"Using cached response for {self.model}")
+                    # Still update token counts for consistency
+                    self.update_token_count(input_tokens)
+                    return cached_response
+                
+                # Make API call if not in cache
                 response = await self.client.chat.completions.create(**params)
 
                 if not response.choices or not response.choices[0].message.content:
@@ -272,8 +286,12 @@ class LLM:
 
                 # Update token counts
                 self.update_token_count(response.usage.prompt_tokens)
+                
+                # Cache the response
+                content = response.choices[0].message.content
+                llm_cache.set(messages, self.model, actual_temp, content)
 
-                return response.choices[0].message.content
+                return content
 
             # Streaming request, For streaming, update estimated token count before making the request
             self.update_token_count(input_tokens)
